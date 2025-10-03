@@ -1,0 +1,175 @@
+// backend/sankhyaApi.jsw
+
+import axios from 'axios';
+
+// -----------------------------------------------------------
+// 1. CONFIGURAÇÃO FIXA DA API (TUDO NO HEADER)
+// -----------------------------------------------------------
+const ENDPOINT_LOGIN = "https://api.sandbox.sankhya.com.br/login";
+
+const LOGIN_HEADERS = {
+    // Credenciais de Identificação
+    'token': "c3744c65-acd9-4d36-aa35-49ecb13aa774",
+    'appkey': "79bf09c7-7aa9-4ac6-b8a4-0c3aa7acfcae",
+    // Credenciais de Usuário
+    'username': "renan.silva@sankhya.com.br",
+    'password': "Integracao123!"
+};
+
+let cachedToken = null;
+
+// -----------------------------------------------------------
+// 2. FUNÇÃO PRIVADA: Obter Token
+// -----------------------------------------------------------
+async function obterToken() {
+    if (cachedToken) {
+        return cachedToken;
+    }
+
+    try {
+        const resposta = await axios.post(
+            ENDPOINT_LOGIN, {}, {
+                headers: LOGIN_HEADERS
+            }
+        );
+
+        const token = resposta.data.bearerToken || resposta.data.token;
+
+        if (!token) {
+            console.error("Token não encontrado na resposta:", resposta.data);
+            throw new Error("Resposta de login do Sankhya não continha o token esperado.");
+        }
+
+        cachedToken = token;
+        return token;
+
+    } catch (erro) {
+        console.error("Erro no Login Sankhya:", erro.response ? erro.response.data : erro.message);
+        throw new Error("Falha na autenticação Sankhya. Verifique os Headers de Login.");
+    }
+}
+
+// -----------------------------------------------------------
+// 3. FUNÇÃO EXPORTADA: Requisição Autenticada Genérica (COM MELHOR LOGGING)
+// -----------------------------------------------------------
+export async function fazerRequisicaoAutenticada(fullUrl, method = 'POST', data = {}) {
+    const token = await obterToken();
+
+    try {
+        const config = {
+            method: method.toLowerCase(),
+            url: fullUrl,
+            data: data,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        };
+
+        const resposta = await axios(config);
+
+        return resposta.data;
+
+    } catch (erro) {
+        const apiErrorDetails = erro.response ? JSON.stringify(erro.response.data) : erro.message;
+
+        console.error(`Falha na requisição Sankhya. Método: ${method}, URL: ${fullUrl}. Detalhes da API:`, apiErrorDetails);
+
+        if (erro.response && erro.response.status === 401) {
+            cachedToken = null;
+            throw new Error("Sessão expirada. Tente novamente.");
+        }
+
+        throw new Error("Falha na comunicação com a API Sankhya.");
+    }
+} // 👈 Chave de fechamento CORRIGIDA
+
+// -----------------------------------------------------------
+// 4. FUNÇÃO EXPORTADA: Consultar Parceiros (COM PAYLOAD COMPLETO)
+// -----------------------------------------------------------
+
+// backend/sankhyaApi.jsw
+
+// ... (Resto do código omitido) ...
+
+/**
+ * Funcao de Mapeamento: Transforma o formato f0, f1, f2 em objetos limpos e ADICIONA O _id.
+ * @param {object} entities O objeto entities retornado dentro do responseBody.
+ * @returns {Array} Lista de parceiros com nomes de campos corretos e a chave _id.
+ */
+function mapearParceiros(entities) {
+    // 1. Obtém os nomes das colunas (Ex: CODPARC, NOMEPARC, CGC_CPF)
+    const fieldNames = entities.metadata.fields.field.map(f => f.name);
+    
+    // 2. Percorre o array 'entity' (que contém os dados)
+    return entities.entity.map((rawEntity, index) => {
+        const cleanObject = {};
+        
+        for (let i = 0; i < fieldNames.length; i++) {
+            const fieldKey = `f${i}`; 
+            const fieldName = fieldNames[i]; 
+            
+            if (rawEntity[fieldKey]) {
+                cleanObject[fieldName] = rawEntity[fieldKey].$;
+            }
+        }
+        
+        // 🚨 CRÍTICO: Adicionar a propriedade _id para o Repetidor.
+        // Usamos o CODPARC se existir, ou o índice se não existir (garantindo unicidade).
+        cleanObject._id = cleanObject.CODPARC ? String(cleanObject.CODPARC) : String(index);
+        
+        return cleanObject;
+    });
+}
+
+
+// FUNÇÃO EXPORTADA: Consultar Parceiros (COM MAPEAMENTO)
+export async function consultarParceiros() {
+    
+    // ... (Configuração de URL e PARCEIROS_PAYLOAD permanece a mesma) ...
+    const URL_CONSULTA_SERVICO = "https://api.sandbox.sankhya.com.br/gateway/v1/mge/service.sbr?serviceName=CRUDServiceProvider.loadRecords&outputType=json"; 
+    
+    const PARCEIROS_PAYLOAD = {
+        "requestBody": {
+            "dataSet": {
+                "rootEntity": "Parceiro",
+                "includePresentationFields": "N",
+                "offsetPage": "0",
+                "criteria": {
+                    "expression": {
+                        "$": "CLIENTE = 'S'"
+                    }
+                }, 
+                "entity":{
+                    "fieldset":{
+                        "list":"CODPARC, NOMEPARC, CGC_CPF"
+                    }
+                }
+            }
+        }
+    };
+
+    try {
+        const respostaCompleta = await fazerRequisicaoAutenticada(
+            URL_CONSULTA_SERVICO, 
+            'POST', 
+            PARCEIROS_PAYLOAD
+        );
+
+        // Acessamos o objeto entities
+        const entities = respostaCompleta.responseBody.entities;
+        
+        if (!entities || !Array.isArray(entities.entity)) {
+             console.error("Estrutura de dados 'entities' inesperada:", entities);
+             throw new Error("A resposta não contém a lista de parceiros no formato esperado.");
+        }
+        
+        // 🚨 CHAMA O MAPEAMENTO: Transforma os dados confusos em dados limpos
+        const listaParceirosLimpa = mapearParceiros(entities);
+        
+        return listaParceirosLimpa; 
+
+    } catch (erro) {
+        throw erro;
+    }
+}

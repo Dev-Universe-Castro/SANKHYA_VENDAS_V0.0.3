@@ -1,0 +1,57 @@
+/**
+ * Cria um novo registro de Parceiro na API Sankhya.
+ * @param {string} nome Nome do Parceiro (NOMEPARC).
+ * @param {string} cpfCnpj CPF ou CNPJ do Parceiro (CGC_CPF).
+ * @param {number} codCidade Código da Cidade (CODCID).
+ * @returns {object} O objeto de resposta da API Sankhya.
+ */
+export async function criarParceiroSankhya(nome, cpfCnpj, codCidade) {
+
+    // URL para o serviço DatasetSP.save (a mesma que você forneceu)
+    const URL_CRIACAO_SERVICO = "https://api.sandbox.sankhya.com.br/gateway/v1/mge/service.sbr?serviceName=DatasetSP.save&outputType=json";
+
+    // O payload é criado dinamicamente com os dados do novo Parceiro
+    const CRIACAO_PARCEIRO_PAYLOAD = {
+        "serviceName":"DatasetSP.save",
+        "requestBody":{
+            "entityName":"Parceiro",
+            "standAlone":false,
+            "fields":[
+                // CODPARC está aqui para ser retornado após a criação
+                "CODPARC",
+                "NOMEPARC",
+                "ATIVO",
+                "TIPPESSOA",
+                "CGC_CPF",
+                "CODCID"
+            ],
+            "records":[
+                {
+                    "values":{
+                        // Mapeamento de índice conforme o Sankhya:
+                        "1": nome,                              // NOMEPARC
+                        "2": "S",                               // ATIVO (S=Sim)
+                        "3": cpfCnpj.length > 11 ? "J" : "F",   // TIPPESSOA (J=Jurídica se CNPJ, F=Física se CPF)
+                        "4": cpfCnpj,                           // CGC_CPF
+                        "5": codCidade                 // CODCID (Deve ser string)
+                    }
+                }
+            ]
+        }
+    };
+
+    try {
+        const respostaCriacao = await fazerRequisicaoAutenticada(
+            URL_CRIACAO_SERVICO, 
+            'POST', 
+            CRIACAO_PARCEIRO_PAYLOAD
+        );
+        
+        // Retorna a resposta completa da API, que incluirá o CODPARC recém-criado.
+        return respostaCriacao; 
+
+    } catch (erro) {
+        console.error("Erro ao criar Parceiro Sankhya:", erro.message);
+        throw erro;
+    }
+}

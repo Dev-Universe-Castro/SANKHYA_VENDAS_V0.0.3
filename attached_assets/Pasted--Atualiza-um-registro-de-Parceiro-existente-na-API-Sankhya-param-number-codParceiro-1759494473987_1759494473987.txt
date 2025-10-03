@@ -1,0 +1,76 @@
+/**
+ * Atualiza um registro de Parceiro existente na API Sankhya.
+ * * @param {number} codParceiro O código (CODPARC) do parceiro a ser atualizado.
+ * @param {object} dadosAtualizacao Objeto contendo os campos a serem atualizados (Ex: { nome: 'Novo Nome', codCidade: 123 }).
+ * @returns {object} O objeto de resposta da API Sankhya.
+ */
+export async function atualizarParceiroSankhya(codParceiro, dadosAtualizacao) {
+
+    // A URL é a mesma usada para criação, pois o serviço é o mesmo
+    const URL_ATUALIZACAO_SERVICO = "https://api.sandbox.sankhya.com.br/gateway/v1/mge/service.sbr?serviceName=DatasetSP.save&outputType=json";
+
+    // 1. Definição dos campos Sankhya e seus índices.
+    // Usaremos apenas os campos que você deseja atualizar, além do CODPARC (obrigatório).
+    const fieldsMap = {
+        'nome': { index: "1", field: "NOMEPARC" },
+        'cpfCnpj': { index: "2", field: "CGC_CPF" },
+        'codCidade': { index: "3", field: "CODCID" },
+        'ativo': { index: "4", field: "ATIVO" } // Exemplo: se quiser mudar o status ATIVO
+        // Adicione mais campos conforme a necessidade
+    };
+
+    const fieldsList = ["CODPARC"];
+    const values = {};
+    let indexCount = 1;
+
+    // 2. Monta a lista de campos (fields) e o objeto de valores (values) dinamicamente
+    for (const key in dadosAtualizacao) {
+        if (dadosAtualizacao.hasOwnProperty(key) && fieldsMap[key]) {
+            const fieldData = fieldsMap[key];
+            
+            // Reatribui o índice baseado no loop atual para garantir a ordem correta
+            fieldData.index = String(indexCount); 
+            
+            fieldsList.push(fieldData.field);
+            values[fieldData.index] = dadosAtualizacao[key];
+            indexCount++;
+        }
+    }
+
+    if (fieldsList.length === 1) { // Só tem o CODPARC, nada para atualizar
+        throw new Error("Nenhum dado válido fornecido para atualização.");
+    }
+    
+    // 3. Monta o payload final
+    const ATUALIZACAO_PARCEIRO_PAYLOAD = {
+        "serviceName": "DatasetSP.save",
+        "requestBody": {
+            "entityName": "Parceiro",
+            "standAlone": false,
+            "fields": fieldsList, // Lista de campos a serem atualizados
+            "records": [
+                {
+                    "pk": {
+                        "CODPARC": String(codParceiro) // CHAVE PRIMÁRIA é crítica para UPDATE
+                    },
+                    "values": values // Valores a serem inseridos/modificados
+                }
+            ]
+        }
+    };
+
+    try {
+        const respostaAtualizacao = await fazerRequisicaoAutenticada(
+            URL_ATUALIZACAO_SERVICO, 
+            'POST', 
+            ATUALIZACAO_PARCEIRO_PAYLOAD
+        );
+        
+        // Retorna a resposta, que normalmente é vazia em caso de sucesso (status 200).
+        return respostaAtualizacao; 
+
+    } catch (erro) {
+        console.error(`Erro ao atualizar Parceiro ${codParceiro} Sankhya:`, erro.message);
+        throw erro;
+    }
+}
